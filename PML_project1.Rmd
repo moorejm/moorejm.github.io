@@ -1,0 +1,92 @@
+---
+title: "Predicting Dumbbell Biceps Curl Form Using Machine Learning Models"
+output: html_document
+---
+
+### Coursera Practical Machine Learning Course Project
+
+
+## Synopsis
+Quantitative activity recognition can be used to determine how well an activity or exercise was performed. Data from the study "Quantitative Activity Recognition of Weight Lifting Exercises" was used to build a random forest model to predict whether a dumbbell biceps curl was being performed correctly or if a common mistake was being made based on full body motion measurements taken during the exercise. The training data was split into a "training" (70%) and "testing" (30%) data set. The random forest model had an accuracy greater than 0.99 compared to the testing set and was then compared to a validation set with 20 samples. Looking at the importance of each variable, some variables such as "roll belt," "yaw belt," "pitch forearm," and "roll forearm" were much more important than others, indicating that some sensor readings were much more valuable than others when predicting the form that was used.
+
+## Introduction
+Activity trackers on the market today can be used to determine how much of a particular activity/exercise the user is performing, but doesn't necessarily tell anything about how well the activity was performed, which could impact the effectiveness of the exercise and the likelihood of injury. Qualitative activity recognition focuses on how well an activity or exercise was performed. Using machine learning models, study data can be used to predict when an activity is being performed correctly or if the user is making a common mistake. The purpose of this analysis is to predict the correct exercise form and common mistakes users make when performing the dumbbell biceps curl. This analysis is based on data and work done in the study "Quantitative Activity Recognition of Weight Lifting Exercises":
+
+**Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks,H. Qualitative Activity Recognition of Weight Lifting Exercises.
+Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13). Stuttgart, Germany: ACM
+SIGCHI, 2013. Available at http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201**
+
+The study looked at the correct dumbbell biceps curl form as well as four common mistakes:
+
+* Class A: Correct form
+* Class B: Elbows thrown to front
+* Class C: Dumbbell lifted halfway
+* Class D: Dumbbell lowered halfway
+* Class E: Hips thrown to front
+
+Using training data from the study, we can use a machine learning model to predict the correct class in a testing and validation data set.
+
+
+## Data Processing
+For this analysis, the data used in this study is broken into a "training" and "testing" set (which is used as a validation set):
+
+* Training Data Set: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+* Validation Data Set: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The first step in processing the data is to download the data, subset the appropriate columns, and load the libraries used in the analysis. Training data is downloaded from the link above, placed in the working directory, and then loaded into R using the read.csv() function. The data is then subset, removing bookkeeping columns such as row number, window number, and timestamp columns. Columns that have no data in the "pml-testing.csv" data set are also removed, since keeping them in the training set would have no predictive power (e.g., kurtosis, min, max, and ampliture columns). Altogether, 53 of 160 total variables are kept in the data set. The libraries "caret" and "randomForest" are used in this analysis.
+
+```{r}
+data <- read.csv("./pml-training.csv")
+dataClean <- data[,c(8:11,37:49,60:68,84:86,102,113:124,140,151:159,160)]
+str(dataClean)
+```
+```{r, include=FALSE}
+library(caret)
+library(randomForest)
+```
+
+Next, using the carat package, the training data is split into a "training" (70%) and "testing" (30%) set, so that the randomForest model can be tested on the test set before being used on the validation set (which should only be used once).  
+
+```{r}
+inTrain <- createDataPartition(y=dataClean$classe, p=0.70, list=FALSE)
+training <- dataClean[inTrain,]
+testing <- dataClean[-inTrain,]
+```
+
+After the training set has been split, then the randomForest model can be trained to the "training" set (70% of the data). Since random forest models select random subsets of the data for each tree, it is important to set a seed so that the results are reproducible. Additionally, since random subsets are selected for each tree, cross-validation is being performed automatically. The randomForest package is used instead of caret in this analysis to reduce processing time. The number of trees and nodes are also restricted (to 20 and 5, respectively) to balance the predictive power of the model with performance/scalability. The plot below shows how the error rate for each exercise class decreases as the number of trees increases, while the out-of-bag error (oob) is estimated by comparing the predictions from each tree to the data that wasn't used in the tree (which is done as a substitute for cross-validation).
+
+```{r}
+set.seed(1000)
+rf <- randomForest(classe ~ ., data=training, type="prob", ntree=20, nodesize=5, NA.rm=TRUE)
+plot(rf, main="Random Forest Error Rate vs. Number of Trees")
+legend("topright",colnames(rf$err.rate),col=1:6,fill=1:6)
+```
+
+
+## Results
+The accuracy of the random forest model is predicted by comparing the results to the testing set (30%) that was split at the beginning of the analysis using the predict() function. After that, the confusionMatrix() function is used to calculate the accuracy of the model.
+
+```{r}
+set.seed(1000)
+predTesting <- predict(rf,newdata=testing)
+testAccuracy <- confusionMatrix(predTesting,testing$classe)
+testAccuracy
+```
+
+Predicting the test set, we see that the random forest model has an accuracy of `r testAccuracy$overall[1]`, which gives an out-of-sample error rate of `r 1-testAccuracy$overall[1]`. The final step in the analysis is comparing the random forest model to the validation test set to predict the values of 20 samples with an unknown exercise class. The model predicts the following classes for the samples found here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r}
+validation <- read.csv("./pml-testing.csv")
+predValidation <- predict(rf,newdata=validation)
+predValidation
+```
+
+
+## Discussion/Conclusion
+Overall, it seems that the model above is a good predictor of the exercise form being used in a dumbbell biceps curl. Typically, a random forest model is one of the most accurate machine learning models that can be used because it creates several trees based on random subsets of the data. However, random forest models typically take longer to run, and therefore can be problematic when trying to scale up a prediction algorithm. In this particular model, certain variables had much more predictive power than others. For instance, the "roll belt" and "yaw belt" were the most important variables -- perhaps these variables were much more predictive of "Class E" form (hips thrown to front). Similarly, the "pitch forearm" and "roll foream" could potentially be used to determine "Class C" and "Class D" forms (dumbbell lifed or lowered halfway). The graph below indicates the importance of each variable in the random forest model:
+
+```{r}
+varImpPlot(rf, main="Random Forest Variable Importance")
+```
+
+In order to use quantitative activity recognition on a larger scale and with more activities, additional data collection and more in-depth analysis would need to be done to determine what common mistakes are for a wide range of activities and activity trackers with additional sensors would need to be developed to track full body motion. However, studies such as these would be useful for building more advanced activity trackers since alerting the user to poor form could help improve the effectiveness of the activitiy and also reduce the risk of injury.
